@@ -84,7 +84,7 @@ export default function Page() {
     let enhancedPrompt = prompt
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/nano/generate-image", {
+      const response = await fetch("https://zoop-a1-v2.onrender.com/nano/generate-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -115,7 +115,7 @@ export default function Page() {
   const downloadImage = async () => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/nano/download-image?image_url=${encodeURIComponent(imageUrl)}`
+        `https://zoop-a1-v2.onrender.com/nano/download-image?image_url=${encodeURIComponent(imageUrl)}`
       )
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)

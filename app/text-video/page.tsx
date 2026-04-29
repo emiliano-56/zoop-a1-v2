@@ -44,7 +44,7 @@ ${prompt}
     setVideoUrl("")
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/text-video/generate-video", {
+      const res = await fetch("https://zoop-a1-v2.onrender.com/text-video/generate-video", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
