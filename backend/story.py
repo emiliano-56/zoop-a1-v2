@@ -13,6 +13,7 @@ import numpy as np
 # LOAD ENV
 # =========================
 load_dotenv()
+app = FastAPI()
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
@@ -49,11 +50,20 @@ DEFAULT_FONT_SIZE = "medium"
 print("Loaded fonts:", FONT_MAP)
 
 # =========================
-# FASTAPI
 # =========================
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# CORS
+# =====================================================
+origins = os.getenv("CORS_ORIGINS", "").split(",")
 
+print("Allowed CORS origins:", origins)  # 👈 helps debug
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # =========================
 # DOWNLOAD HELPER
 # =========================
