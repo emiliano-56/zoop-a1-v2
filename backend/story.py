@@ -52,14 +52,12 @@ print("Loaded fonts:", FONT_MAP)
 # =========================
 # =========================
 # CORS
-# =====================================================
-origins = os.getenv("CORS_ORIGINS", "").split(",")
-
-print("Allowed CORS origins:", origins)  # 👈 helps debug
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "https://v0-zoop-v4.vercel.app",
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
