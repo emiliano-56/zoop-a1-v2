@@ -50,16 +50,18 @@ DEFAULT_FONT_SIZE = "medium"
 print("Loaded fonts:", FONT_MAP)
 
 # =========================
-# =========================
-# CORS
-from fastapi.middleware.cors import CORSMiddleware
+# CORS CONFIG
+# Get env variables
+origins = os.getenv("CORS_ORIGINS", "")
+origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+
+# Convert comma-separated string to list
+origin_list = [o.strip() for o in origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=origin_list,  # exact domains from env
+    allow_origin_regex=origin_regex,  # dynamic domains (Vercel)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
