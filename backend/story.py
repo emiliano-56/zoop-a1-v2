@@ -51,21 +51,20 @@ print("Loaded fonts:", FONT_MAP)
 
 # =========================
 # CORS CONFIG
-# Get env variables
-origins = os.getenv("CORS_ORIGINS", "")
-origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+# CORS
+# =====================================================
+origins = os.getenv("CORS_ORIGINS", "").split(",")
 
-# Convert comma-separated string to list
-origin_list = [o.strip() for o in origins.split(",") if o.strip()]
+print("Allowed CORS origins:", origins)  # 👈 helps debug
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origin_list,  # exact domains from env
-    allow_origin_regex=origin_regex,  # dynamic domains (Vercel)
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 
 # =========================
 # DOWNLOAD HELPER
 # =========================
