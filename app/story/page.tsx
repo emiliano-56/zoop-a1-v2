@@ -234,7 +234,7 @@ export default function Page() {
     form.append("speech_rate", speechRate)
 
     try {
-      const res = await fetch("https://zoop-a1-v2.onrender.com/story/generate", {
+      const res = await fetch("http://127.0.0.1:8000/story/generate", {
         method: "POST",
         body: form
       })
