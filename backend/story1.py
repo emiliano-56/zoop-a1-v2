@@ -1,5 +1,5 @@
 import os, shutil, uuid, json, requests
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -27,19 +27,17 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE")
 
 # =========================
-# FONT CONFIG (SAFE)
+# FONT CONFIG
 # =========================
 FONT_DIR = "fonts"
+
+FONT_MAP = {
+    f.split(".")[0].lower(): os.path.join(FONT_DIR, f)
+    for f in os.listdir(FONT_DIR)
+    if f.endswith(".ttf")
+}
+
 DEFAULT_FONT = "poppins-regular"
-
-FONT_MAP = {}
-
-if os.path.exists(FONT_DIR):
-    FONT_MAP = {
-        f.split(".")[0].lower(): os.path.join(FONT_DIR, f)
-        for f in os.listdir(FONT_DIR)
-        if f.endswith(".ttf")
-    }
 
 FONT_SIZE_MAP = {
     "small": 40,
@@ -52,16 +50,12 @@ DEFAULT_FONT_SIZE = "medium"
 print("Loaded fonts:", FONT_MAP)
 
 # =========================
-# CORS FIX
-# =========================
-origins = os.getenv("CORS_ORIGINS")
+# CORS CONFIG
+# CORS
+# =====================================================
+origins = os.getenv("CORS_ORIGINS", "").split(",")
 
-if origins:
-    origins = origins.split(",")
-else:
-    origins = ["*"]
-
-print("Allowed CORS origins:", origins)
+print("Allowed CORS origins:", origins)  # 👈 helps debug
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,12 +64,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# =========================
-# JOB STORAGE (TEMP MEMORY)
-# =========================
-jobs = {}
-
+# 
 # =========================
 # DOWNLOAD HELPER
 # =========================
@@ -89,12 +78,11 @@ def download_file(url, suffix):
             f.write(res.content)
 
         return path
-    except Exception as e:
-        print("Download error:", e)
+    except:
         return None
 
 # =========================
-# TTS
+# TTS WITH TIMING
 # =========================
 async def get_tts_with_timings(text, path, voice, rate="+0%"):
     communicate = edge_tts.Communicate(text, voice, rate=rate)
@@ -132,11 +120,11 @@ async def get_tts_with_timings(text, path, voice, rate="+0%"):
     return timings, audio
 
 # =========================
-# ANIMATION
+# 🎬 IMAGE ANIMATION ENGINE
 # =========================
 def apply_animation(clip, effect="zoom", duration=0.5):
     if effect == "none":
-        return clip
+        return clip  # 🔥 NO ANIMATION
 
     if effect == "fade":
         return clip.fadein(duration).fadeout(duration)
@@ -151,7 +139,6 @@ def apply_animation(clip, effect="zoom", duration=0.5):
         return clip.resize(lambda t: 1 + 0.08*t)
 
     return clip
-
 # =========================
 # TEXT IMAGE
 # =========================
@@ -167,7 +154,8 @@ def text_img(word, size, style):
 
     try:
         font = ImageFont.truetype(font_path, font_size)
-    except:
+    except Exception as e:
+        print("Font error:", e)
         font = ImageFont.load_default()
 
     bbox = draw.textbbox((0,0), word, font=font)
@@ -188,20 +176,25 @@ def text_img(word, size, style):
     return np.array(img)
 
 # =========================
-# SCENE
+# SCENE (UPDATED WITH ANIMATION)
 # =========================
 def create_scene(images, words, audio, size, style, bg_music_path=None, bg_volume=0.2):
     total_duration = audio.duration
+
     clips = []
     per_img = total_duration / len(images)
 
-    effect = style.get("effect", "zoom")
+    effect = style.get("effect", "zoom")  # 👈 default animation
 
     for img in images:
         clip = ImageClip(img).resize(size).set_duration(per_img)
+
+        # 🔥 APPLY ANIMATION HERE
         clip = apply_animation(clip, effect)
+
         clips.append(clip)
 
+    # 🔥 SMOOTH TRANSITIONS
     base = concatenate_videoclips(clips, method="compose", padding=-0.5)
 
     subs = []
@@ -210,6 +203,7 @@ def create_scene(images, words, audio, size, style, bg_music_path=None, bg_volum
             continue
 
         duration = min(w["duration"], total_duration - w["start"])
+
         txt = text_img(w["word"], size, style)
 
         subs.append(
@@ -220,6 +214,7 @@ def create_scene(images, words, audio, size, style, bg_music_path=None, bg_volum
 
     final = CompositeVideoClip([base, *subs]).set_duration(total_duration)
 
+    # AUDIO MIX
     if bg_music_path:
         bg_audio = AudioFileClip(bg_music_path).volumex(bg_volume)
 
@@ -235,95 +230,30 @@ def create_scene(images, words, audio, size, style, bg_music_path=None, bg_volum
     return final.set_audio(final_audio)
 
 # =========================
-# BACKGROUND PROCESSOR
-# =========================
-async def process_job(job_id, scenes, style, size, voice, speech_rate, bg_volume, bg_music_path, files):
-    try:
-        jobs[job_id]["status"] = "processing"
-
-        final_clips = []
-        file_index = 0
-
-        for i, scene in enumerate(scenes):
-            text = scene["text"]
-            count = scene.get("image_count", 0)
-            image_urls = scene.get("image_urls", [])
-
-            paths = []
-
-            for _ in range(count):
-                if file_index < len(files):
-                    file = files[file_index]
-                    file_index += 1
-
-                    path = f"{UPLOAD_DIR}/{uuid.uuid4()}.jpg"
-                    with open(path, "wb") as f:
-                        shutil.copyfileobj(file.file, f)
-
-                    paths.append(path)
-
-            for url in image_urls:
-                img_path = download_file(url, "jpg")
-                if img_path:
-                    paths.append(img_path)
-
-            if not paths:
-                continue
-
-            audio_path = f"{OUTPUT_DIR}/audio_{i}.mp3"
-            words, audio = await get_tts_with_timings(text, audio_path, voice, speech_rate)
-
-            clip = create_scene(paths, words, audio, size, style, bg_music_path, bg_volume)
-            final_clips.append(clip)
-
-        if not final_clips:
-            jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"] = "No scenes created"
-            return
-
-        video = concatenate_videoclips(final_clips, method="compose")
-        out = f"{OUTPUT_DIR}/{job_id}.mp4"
-
-        video.write_videofile(
-            out,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
-            threads=2,
-            preset="ultrafast"
-        )
-
-        jobs[job_id]["status"] = "completed"
-        jobs[job_id]["file"] = out
-
-    except Exception as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"] = str(e)
-        print("JOB ERROR:", e)
-
-# =========================
-# GENERATE (ASYNC)
+# ROUTE
 # =========================
 @app.post("/generate")
 async def generate(
-    background_tasks: BackgroundTasks,
     scenes: str = Form(...),
     aspect_ratio: str = Form(...),
     style: str = Form(...),
     voice: str = Form(None),
     speech_rate: str = Form("+0%"),
     bg_volume: float = Form(0.2),
+
     bg_music_url: str = Form(None),
+
     files: list[UploadFile] = File([]),
     bg_music: UploadFile = File(None)
 ):
-    job_id = str(uuid.uuid4())
-
     scenes = json.loads(scenes)
     style = json.loads(style)
 
     voice = voice if voice else DEFAULT_VOICE
     size = (720,1280) if aspect_ratio=="9:16" else (1280,720)
+
+    final_clips = []
+    file_index = 0
 
     bg_music_path = None
 
@@ -335,38 +265,61 @@ async def generate(
     elif bg_music_url:
         bg_music_path = download_file(bg_music_url, "mp3")
 
-    jobs[job_id] = {"status": "queued"}
+    for i, scene in enumerate(scenes):
+        text = scene["text"]
+        count = scene.get("image_count", 0)
+        image_urls = scene.get("image_urls", [])
 
-    background_tasks.add_task(
-        process_job,
-        job_id,
-        scenes,
-        style,
-        size,
-        voice,
-        speech_rate,
-        bg_volume,
-        bg_music_path,
-        files
+        paths = []
+
+        for _ in range(count):
+            if file_index < len(files):
+                file = files[file_index]
+                file_index += 1
+
+                path = f"{UPLOAD_DIR}/{uuid.uuid4()}.jpg"
+                with open(path, "wb") as f:
+                    shutil.copyfileobj(file.file, f)
+
+                paths.append(path)
+
+        for url in image_urls:
+            img_path = download_file(url, "jpg")
+            if img_path:
+                paths.append(img_path)
+
+        if not paths:
+            continue
+
+        audio_path = f"{OUTPUT_DIR}/audio_{i}.mp3"
+        words, audio = await get_tts_with_timings(text, audio_path, voice, speech_rate)
+
+        clip = create_scene(
+            paths,
+            words,
+            audio,
+            size,
+            style,
+            bg_music_path,
+            bg_volume
+        )
+
+        final_clips.append(clip)
+
+    if not final_clips:
+        return {"error": "No valid scenes created"}
+
+    video = concatenate_videoclips(final_clips, method="compose")
+
+    out = f"{OUTPUT_DIR}/final.mp4"
+
+    video.write_videofile(
+        out,
+        fps=24,
+        codec="libx264",
+        audio_codec="aac",
+        threads=2,
+        preset="ultrafast"
     )
 
-    return {"job_id": job_id, "status": "queued"}
-
-# =========================
-# STATUS
-# =========================
-@app.get("/status/{job_id}")
-def check_status(job_id: str):
-    return jobs.get(job_id, {"error": "Invalid job id"})
-
-# =========================
-# DOWNLOAD
-# =========================
-@app.get("/download/{job_id}")
-def download_video(job_id: str):
-    job = jobs.get(job_id)
-
-    if not job or job["status"] != "completed":
-        return {"error": "Not ready"}
-
-    return FileResponse(job["file"], media_type="video/mp4")
+    return FileResponse(out, media_type="video/mp4")
