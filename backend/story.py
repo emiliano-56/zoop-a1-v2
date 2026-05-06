@@ -6,8 +6,16 @@ from dotenv import load_dotenv
 
 import edge_tts
 from moviepy.editor import *
+from moviepy import audio as afx   # ✅ FIX: missing import
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+
+# =========================
+# 🔥 FIX FOR PILLOW 10+
+# =========================
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 
 # =========================
 # LOAD ENV
@@ -27,7 +35,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE")
 
 # =========================
-# FONT CONFIG (SAFE)
+# FONT CONFIG
 # =========================
 FONT_DIR = "fonts"
 DEFAULT_FONT = "poppins-regular"
@@ -72,7 +80,7 @@ app.add_middleware(
 )
 
 # =========================
-# JOB STORAGE (TEMP MEMORY)
+# JOB STORAGE
 # =========================
 jobs = {}
 
@@ -198,7 +206,8 @@ def create_scene(images, words, audio, size, style, bg_music_path=None, bg_volum
     effect = style.get("effect", "zoom")
 
     for img in images:
-        clip = ImageClip(img).resize(size).set_duration(per_img)
+        # ✅ FIX: modern Pillow-safe resize
+        clip = ImageClip(img).resize(newsize=size).set_duration(per_img)
         clip = apply_animation(clip, effect)
         clips.append(clip)
 
@@ -302,7 +311,7 @@ async def process_job(job_id, scenes, style, size, voice, speech_rate, bg_volume
         print("JOB ERROR:", e)
 
 # =========================
-# GENERATE (ASYNC)
+# API
 # =========================
 @app.post("/generate")
 async def generate(
@@ -352,16 +361,10 @@ async def generate(
 
     return {"job_id": job_id, "status": "queued"}
 
-# =========================
-# STATUS
-# =========================
 @app.get("/status/{job_id}")
 def check_status(job_id: str):
     return jobs.get(job_id, {"error": "Invalid job id"})
 
-# =========================
-# DOWNLOAD
-# =========================
 @app.get("/download/{job_id}")
 def download_video(job_id: str):
     job = jobs.get(job_id)
