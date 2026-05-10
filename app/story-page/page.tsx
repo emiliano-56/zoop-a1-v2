@@ -9,6 +9,7 @@ export default function Page() {
   const [videoUrl, setVideoUrl] = useState("")
   const [videoTitle, setVideoTitle] = useState("")
   const [loading, setLoading] = useState(false)
+  const [statusText, setStatusText] = useState("")
 
   const [voice, setVoice] = useState("en-US-AriaNeural")
    const [font, setFont] = useState("poppins-regular")
@@ -200,6 +201,7 @@ export default function Page() {
 
   const generate = async () => {
     setLoading(true)
+    setStatusText("")
 
     const form = new FormData()
 
@@ -218,34 +220,65 @@ export default function Page() {
     }))
 
     form.append("voice", voice)
-
-    // ✅ Convert volume from 0-100 to 0-1
     form.append("bg_volume", (bgVolume / 100).toString())
-
-    if (bgMusic) {
-      form.append("bg_music", bgMusic)
-    }
-
-    if (bgMusicUrl) {
-      form.append("bg_music_url", bgMusicUrl)
-    }
-
-    // 🔥 Add speech speed to backend
     form.append("speech_rate", speechRate)
 
+    if (bgMusic) form.append("bg_music", bgMusic)
+    if (bgMusicUrl) form.append("bg_music_url", bgMusicUrl)
+
     try {
+      // 🔥 STEP 1: Start job
       const res = await fetch("http://127.0.0.1:8000/story/generate", {
         method: "POST",
         body: form
       })
 
-      const blob = await res.blob()
-      setVideoUrl(URL.createObjectURL(blob))
-    } catch (err) {
-      alert("Error generating video")
-    }
+      const data = await res.json()
 
-    setLoading(false)
+      if (!data.job_id) {
+        throw new Error("No job id returned")
+      }
+
+      const jobId = data.job_id
+      setStatusText("queued")
+
+      // 🔥 STEP 2: Poll status
+      const poll = async () => {
+        const statusRes = await fetch(`http://127.0.0.1:8000/story/status/${jobId}`)
+        const statusData = await statusRes.json()
+
+        setStatusText(statusData.status)
+
+        if (statusData.status === "completed") {
+          // 🔥 STEP 3: Get video
+          const videoRes = await fetch(`http://127.0.0.1:8000/story/download/${jobId}`)
+          const blob = await videoRes.blob()
+
+          setVideoUrl(URL.createObjectURL(blob))
+          setLoading(false)
+          setStatusText("completed")
+          return
+        }
+
+        if (statusData.status === "failed") {
+          alert("Video generation failed: " + statusData.error)
+          setLoading(false)
+          setStatusText("failed")
+          return
+        }
+
+        // keep polling every 2 seconds
+        setTimeout(poll, 2000)
+      }
+
+      poll()
+
+    } catch (err) {
+      console.error(err)
+      alert("Error generating video")
+      setLoading(false)
+      setStatusText("")
+    }
   }
 
   return (

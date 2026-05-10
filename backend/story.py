@@ -373,3 +373,27 @@ def download_video(job_id: str):
         return {"error": "Not ready"}
 
     return FileResponse(job["file"], media_type="video/mp4")
+
+
+# =========================
+# 🔥 VOICE PREVIEW ENDPOINT (FIXED POSITION)
+# =========================
+@app.post("/preview-voice")
+async def preview_voice(
+    text: str = Form(...),
+    voice: str = Form(...),
+    speech_rate: str = Form("+0%")
+):
+    try:
+        temp_path = f"{OUTPUT_DIR}/preview_{uuid.uuid4()}.mp3"
+
+        await edge_tts.Communicate(
+            text=text,
+            voice=voice,
+            rate=speech_rate
+        ).save(temp_path)
+
+        return FileResponse(temp_path, media_type="audio/mpeg")
+
+    except Exception as e:
+        return {"error": str(e)}

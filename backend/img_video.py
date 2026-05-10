@@ -17,14 +17,20 @@ if not API_KEY:
 
 app = FastAPI()
 
+# =====================================================
+# CORS
+# =====================================================
+origins = os.getenv("CORS_ORIGINS", "").split(",")
+
+print("Allowed CORS origins:", origins)  # 👈 helps debug
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -51,7 +57,7 @@ class VEO3Client:
 
     def generate_video(self, prompt, audio=True, resolution="1080p", aspect_ratio="16:9", image_data=None):
         payload = {
-            "model": "veo3-quality",
+            "model": "veo3-lite",
             "prompt": prompt,
             "audio": audio,
             "modelVersion": "3.1",
