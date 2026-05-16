@@ -421,7 +421,7 @@ const VOICE_SAMPLES: { [key: string]: string } = {
 
     try {
       // 🔥 STEP 1: Start job
-      const res = await fetch(" http://127.0.0.1:8000/story/generate", {
+      const res = await fetch("https://zoop-a1-v2.onrender.com/story/generate", {
         method: "POST",
         body: form
       })
@@ -437,14 +437,14 @@ const VOICE_SAMPLES: { [key: string]: string } = {
 
       // 🔥 STEP 2: Poll status
       const poll = async () => {
-        const statusRes = await fetch(` http://127.0.0.1:8000/story/status/${jobId}`)
+        const statusRes = await fetch(` https://zoop-a1-v2.onrender.com/story/status/${jobId}`)
         const statusData = await statusRes.json()
 
         setStatusText(statusData.status)
 
         if (statusData.status === "completed") {
           // 🔥 STEP 3: Get video
-          const videoRes = await fetch(` http://127.0.0.1:8000/story/download/${jobId}`)
+          const videoRes = await fetch(` https://zoop-a1-v2.onrender.com/story/download/${jobId}`)
           const blob = await videoRes.blob()
 
           setVideoUrl(URL.createObjectURL(blob))
@@ -490,7 +490,7 @@ const VOICE_SAMPLES: { [key: string]: string } = {
 
       form.append("text", sampleText)
 
-      const res = await fetch("http://127.0.0.1:8000/story/preview-voice", {
+      const res = await fetch("https://zoop-a1-v2.onrender.com/story/preview-voice", {
         method: "POST",
         body: form
       })
