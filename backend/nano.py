@@ -75,14 +75,11 @@ SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 if not GOAPI_API_KEY:
     raise ValueError("GOAPI_API_KEY is missing")
 
-
 if not SUPABASE_URL:
     raise ValueError("SUPABASE_URL is missing")
 
-
 if not SUPABASE_KEY:
     raise ValueError("SUPABASE_KEY is missing")
-
 
 if not SUPABASE_JWT_SECRET:
     raise ValueError("SUPABASE_JWT_SECRET is missing")
@@ -122,7 +119,6 @@ def get_user_id(authorization: str):
         )
 
     try:
-
         token = authorization.split(" ")[1]
 
         payload = jwt.decode(
@@ -219,7 +215,7 @@ def get_task_status(task_id: str):
 
 
 # =====================================================
-# UPLOAD IMAGE TO SUPABASE
+# FIXED: UPLOAD IMAGE TO SUPABASE
 # =====================================================
 
 def upload_image_to_supabase(
@@ -230,53 +226,53 @@ def upload_image_to_supabase(
 ):
 
     try:
-
-        # Download image from GoAPI
-        response = requests.get(
-            image_url,
-            timeout=120
-        )
+        # Download image
+        response = requests.get(image_url, timeout=120)
 
         if response.status_code != 200:
             raise Exception("Failed to download image")
 
         image_bytes = response.content
 
-        # Unique filename
         filename = f"{task_id}-{uuid.uuid4()}.png"
-
-        # Store inside user folder
         storage_path = f"{user_id}/{filename}"
 
-        # Upload to private bucket
-        supabase.storage.from_("nano-images").upload(
+        # Upload (FIXED)
+        upload_response = supabase.storage.from_("nano-images").upload(
             path=storage_path,
-            file=image_bytes,
-            file_options={
-                "content-type": "image/png"
-            }
+            file=BytesIO(image_bytes),
+            file_options={"content-type": "image/png"}
         )
 
-        # Save metadata in database
-        supabase.table("Nano_images").insert({
+        # Check upload error
+        if hasattr(upload_response, "error") and upload_response.error:
+            raise Exception(f"Upload failed: {upload_response.error}")
+
+        # Insert into DB
+        db_response = supabase.table("Nano_images").insert({
             "user_id": user_id,
             "task_id": task_id,
             "prompt": prompt,
             "storage_path": storage_path
         }).execute()
 
-        # Generate secure signed URL
+        if db_response.data is None:
+            raise Exception("Database insert failed")
+
+        # Create signed URL (FIXED KEY)
         signed_url_data = supabase.storage \
             .from_("nano-images") \
-            .create_signed_url(
-                storage_path,
-                60 * 60
-            )
+            .create_signed_url(storage_path, 60 * 60)
 
-        return signed_url_data["signedURL"]
+        signed_url = signed_url_data.get("signedUrl")
+
+        if not signed_url:
+            raise Exception("Failed to generate signed URL")
+
+        return signed_url
 
     except Exception as e:
-        print("SUPABASE UPLOAD ERROR:", str(e))
+        print("❌ SUPABASE UPLOAD ERROR:", str(e))
         return None
 
 
@@ -288,13 +284,9 @@ def upload_image_to_supabase(
 def download_image(image_url: str):
 
     try:
-
         decoded_url = unquote(image_url)
 
-        response = requests.get(
-            decoded_url,
-            timeout=120
-        )
+        response = requests.get(decoded_url, timeout=120)
 
         if response.status_code != 200:
             raise HTTPException(
@@ -304,10 +296,7 @@ def download_image(image_url: str):
 
         image_bytes = BytesIO(response.content)
 
-        content_type = response.headers.get(
-            "Content-Type",
-            "image/png"
-        )
+        content_type = response.headers.get("Content-Type", "image/png")
 
         return StreamingResponse(
             image_bytes,
@@ -319,7 +308,6 @@ def download_image(image_url: str):
         )
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -337,11 +325,8 @@ def generate_image(
 ):
 
     try:
-
-        # Get logged in user
         user_id = get_user_id(authorization)
 
-        # Create generation task
         task = create_gemini_task(
             prompt=data.prompt,
             output_format=data.output_format,
@@ -349,10 +334,7 @@ def generate_image(
             image_urls=data.image_urls
         )
 
-        print("TASK CREATED:", task)
-
         if "data" not in task:
-
             raise HTTPException(
                 status_code=500,
                 detail="Invalid API response"
@@ -360,21 +342,11 @@ def generate_image(
 
         task_id = task["data"]["task_id"]
 
-        max_retries = 60
-
-        retry_delay = 5
-
-        for _ in range(max_retries):
+        for _ in range(60):
 
             result = get_task_status(task_id)
 
-            print("TASK RESULT:", result)
-
             status = result["data"]["status"].lower()
-
-            # =====================================================
-            # COMPLETED
-            # =====================================================
 
             if status == "completed":
 
@@ -386,13 +358,11 @@ def generate_image(
                 )
 
                 if not image_url:
-
                     raise HTTPException(
                         status_code=500,
                         detail="No image URL returned"
                     )
 
-                # Upload permanently to Supabase
                 secure_url = upload_image_to_supabase(
                     image_url=image_url,
                     task_id=task_id,
@@ -400,16 +370,19 @@ def generate_image(
                     user_id=user_id
                 )
 
+                # ✅ IMPORTANT FIX
+                if not secure_url:
+                    return {
+                        "success": False,
+                        "message": "Image generated but failed to save"
+                    }
+
                 return {
                     "success": True,
                     "task_id": task_id,
                     "status": "completed",
                     "image_url": secure_url
                 }
-
-            # =====================================================
-            # FAILED
-            # =====================================================
 
             elif status == "failed":
 
@@ -420,11 +393,7 @@ def generate_image(
                     "error": result["data"].get("error", {})
                 }
 
-            time.sleep(retry_delay)
-
-        # =====================================================
-        # TIMEOUT
-        # =====================================================
+            time.sleep(5)
 
         return {
             "success": False,
@@ -434,7 +403,6 @@ def generate_image(
         }
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -451,11 +419,8 @@ def get_images(
 ):
 
     try:
-
-        # Get logged in user
         user_id = get_user_id(authorization)
 
-        # Fetch user images only
         response = supabase.table("Nano_images") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -477,7 +442,7 @@ def get_images(
                 "id": item["id"],
                 "task_id": item["task_id"],
                 "prompt": item["prompt"],
-                "image_url": signed_url_data["signedURL"],
+                "image_url": signed_url_data.get("signedUrl"),
                 "created_at": item["created_at"]
             })
 
@@ -487,7 +452,6 @@ def get_images(
         }
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
             detail=str(e)
