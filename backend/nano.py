@@ -73,7 +73,7 @@ def create_gemini_task(
             "resolution": "1K"  # always fixed
         },
         "config": {
-            "service_mode": "private"
+            "service_mode": "public"
         }
     }
 

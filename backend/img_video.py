@@ -189,7 +189,7 @@ def generate_video(req: VideoRequest):
 
         return {
             "status": "completed",
-            "download_url": f"http://127.0.0.1:8000/img-video/file/{os.path.basename(final_path)}"
+            "download_url": f"https://zoop-a1-v2.onrender.com/img-video/file/{os.path.basename(final_path)}"
         }
 
     except Exception as e:
