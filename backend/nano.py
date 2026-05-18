@@ -55,7 +55,7 @@ class GenerateImageRequest(BaseModel):
 # CREATE TASK
 # =====================================================
 
-def create_gemini_task(
+def create_seedream_task(
     prompt: str,
     output_format: str = "png",
     aspect_ratio: str = "16:9",
@@ -64,13 +64,13 @@ def create_gemini_task(
     url = f"{BASE_URL}/api/v1/task"
 
     payload = {
-        "model": "gemini",
-        "task_type": "nano-banana-2",
+        "model": "seedream",
+        "task_type": "seedream-5-lite",
         "input": {
             "prompt": prompt,
             "output_format": output_format,
             "aspect_ratio": aspect_ratio,
-            "resolution": "1K"  # always fixed
+            "size": "2K"  # always fixed
         },
         "config": {
             "service_mode": "public"
@@ -89,7 +89,7 @@ def create_gemini_task(
     response = requests.post(
         url,
         headers=headers,
-        json=payload,  # IMPORTANT
+        json=payload,
         timeout=120
     )
 
@@ -109,6 +109,7 @@ def create_gemini_task(
 # =====================================================
 
 def get_task_status(task_id: str):
+
     url = f"{BASE_URL}/api/v1/task/{task_id}"
 
     headers = {
@@ -138,6 +139,7 @@ def get_task_status(task_id: str):
 
 @app.get("/download-image")
 def download_image(image_url: str):
+
     try:
         decoded_url = unquote(image_url)
 
@@ -168,6 +170,7 @@ def download_image(image_url: str):
         )
 
     except Exception as e:
+
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -181,7 +184,8 @@ def download_image(image_url: str):
 def generate_image(data: GenerateImageRequest):
 
     try:
-        task = create_gemini_task(
+
+        task = create_seedream_task(
             prompt=data.prompt,
             output_format=data.output_format,
             aspect_ratio=data.aspect_ratio,
@@ -207,7 +211,7 @@ def generate_image(data: GenerateImageRequest):
             )
 
         max_retries = 30
-        retry_delay = 10
+        retry_delay = 15
 
         for _ in range(max_retries):
 
@@ -221,6 +225,7 @@ def generate_image(data: GenerateImageRequest):
 
             # detect overload/rate limit
             if any("too many requests" in log.lower() for log in logs):
+
                 return {
                     "success": False,
                     "task_id": task_id,
@@ -276,6 +281,7 @@ def generate_image(data: GenerateImageRequest):
             # =====================================================
 
             elif status in ["pending", "processing", "running"]:
+
                 time.sleep(retry_delay)
                 continue
 
