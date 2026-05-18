@@ -66,7 +66,7 @@ def create_gemini_task(
 
     payload = {
         "model": "gemini",
-        "task_type": "gemini-2.5-flash-image",
+        "task_type": "nano-banana-2",
         "input": {
             "prompt": prompt,
             "output_format": output_format,
