@@ -1,5 +1,4 @@
 import requests
-import json
 import time
 import os
 from io import BytesIO
@@ -19,9 +18,10 @@ app = FastAPI()
 # =====================================================
 # CORS
 # =====================================================
+
 origins = os.getenv("CORS_ORIGINS", "").split(",")
 
-print("Allowed CORS origins:", origins)  # 👈 helps debug
+print("Allowed CORS origins:", origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +30,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # =====================================================
 # CONFIG
 # =====================================================
@@ -40,7 +41,6 @@ BASE_URL = "https://api.goapi.ai"
 if not GOAPI_API_KEY:
     raise ValueError("GOAPI_API_KEY is missing in .env file")
 
-
 # =====================================================
 # REQUEST MODEL
 # =====================================================
@@ -50,7 +50,6 @@ class GenerateImageRequest(BaseModel):
     image_urls: Optional[List[str]] = None
     output_format: str = "png"
     aspect_ratio: str = "16:9"
-
 
 # =====================================================
 # CREATE TASK
@@ -70,13 +69,15 @@ def create_gemini_task(
         "input": {
             "prompt": prompt,
             "output_format": output_format,
-            "aspect_ratio": aspect_ratio
+            "aspect_ratio": aspect_ratio,
+            "resolution": "1K"  # always fixed
         },
         "config": {
-            "service_mode": "public"
+            "service_mode": "private"
         }
     }
 
+    # image-to-image support
     if image_urls:
         payload["input"]["image_urls"] = image_urls
 
@@ -88,9 +89,12 @@ def create_gemini_task(
     response = requests.post(
         url,
         headers=headers,
-        data=json.dumps(payload),
+        json=payload,  # IMPORTANT
         timeout=120
     )
+
+    print("CREATE TASK RESPONSE:")
+    print(response.text)
 
     if response.status_code != 200:
         raise HTTPException(
@@ -99,7 +103,6 @@ def create_gemini_task(
         )
 
     return response.json()
-
 
 # =====================================================
 # CHECK TASK STATUS
@@ -118,6 +121,9 @@ def get_task_status(task_id: str):
         timeout=120
     )
 
+    print("STATUS RESPONSE:")
+    print(response.text)
+
     if response.status_code != 200:
         raise HTTPException(
             status_code=response.status_code,
@@ -125,7 +131,6 @@ def get_task_status(task_id: str):
         )
 
     return response.json()
-
 
 # =====================================================
 # DOWNLOAD IMAGE ROUTE
@@ -168,13 +173,13 @@ def download_image(image_url: str):
             detail=str(e)
         )
 
-
 # =====================================================
 # GENERATE IMAGE ROUTE
 # =====================================================
 
 @app.post("/generate-image")
 def generate_image(data: GenerateImageRequest):
+
     try:
         task = create_gemini_task(
             prompt=data.prompt,
@@ -185,30 +190,61 @@ def generate_image(data: GenerateImageRequest):
 
         print("TASK CREATED:", task)
 
-        if "data" not in task:
+        task_data = task.get("data")
+
+        if not task_data:
             raise HTTPException(
                 status_code=500,
-                detail="Invalid API response"
+                detail=f"Invalid API response: {task}"
             )
 
-        task_id = task["data"]["task_id"]
+        task_id = task_data.get("task_id")
 
-        max_retries = 60
-        retry_delay = 5
+        if not task_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"No task_id returned: {task}"
+            )
+
+        max_retries = 30
+        retry_delay = 10
 
         for _ in range(max_retries):
+
             result = get_task_status(task_id)
 
             print("TASK RESULT:", result)
 
-            status = result["data"]["status"].lower()
+            result_data = result.get("data", {})
+
+            logs = result_data.get("logs", [])
+
+            # detect overload/rate limit
+            if any("too many requests" in log.lower() for log in logs):
+                return {
+                    "success": False,
+                    "task_id": task_id,
+                    "status": "rate_limited",
+                    "message": "GOAPI servers are overloaded. Try again later.",
+                    "logs": logs
+                }
+
+            status = str(
+                result_data.get("status", "")
+            ).lower()
+
+            # =====================================================
+            # COMPLETED
+            # =====================================================
 
             if status == "completed":
-                output = result["data"].get("output", {})
+
+                output = result_data.get("output", {})
 
                 image_url = (
                     output.get("image_url")
                     or (output.get("image_urls") or [None])[0]
+                    or output.get("url")
                 )
 
                 return {
@@ -216,18 +252,47 @@ def generate_image(data: GenerateImageRequest):
                     "task_id": task_id,
                     "status": "completed",
                     "image_url": image_url,
-                    "image_urls": output.get("image_urls", [])
+                    "image_urls": output.get("image_urls", []),
+                    "raw_output": output
                 }
 
+            # =====================================================
+            # FAILED
+            # =====================================================
+
             elif status == "failed":
+
                 return {
                     "success": False,
                     "task_id": task_id,
                     "status": "failed",
-                    "error": result["data"].get("error", {})
+                    "error": result_data.get("error"),
+                    "logs": logs,
+                    "full_response": result
                 }
 
-            time.sleep(retry_delay)
+            # =====================================================
+            # PROCESSING
+            # =====================================================
+
+            elif status in ["pending", "processing", "running"]:
+                time.sleep(retry_delay)
+                continue
+
+            # =====================================================
+            # UNKNOWN STATUS
+            # =====================================================
+
+            else:
+
+                return {
+                    "success": False,
+                    "task_id": task_id,
+                    "status": status,
+                    "message": "Unknown task status",
+                    "logs": logs,
+                    "full_response": result
+                }
 
         return {
             "success": False,
@@ -237,6 +302,9 @@ def generate_image(data: GenerateImageRequest):
         }
 
     except Exception as e:
+
+        print("ERROR:", str(e))
+
         raise HTTPException(
             status_code=500,
             detail=str(e)
