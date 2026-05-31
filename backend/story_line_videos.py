@@ -26,7 +26,7 @@ API_KEY = os.getenv("VEO3_API_KEY")
 
 BASE_URL = os.getenv(
     "BASE_URL",
-    "http://127.0.0.1:8000"
+    "https://zoop-a1-v2.onrender.com/"
 )
 
 if not API_KEY:

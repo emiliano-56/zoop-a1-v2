@@ -105,7 +105,7 @@ os.makedirs(UPLOADED_MUSIC_DIR, exist_ok=True)
 # BASE URL
 # =====================================================
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://zoop-a1-v2.onrender.com/"
 
 # =====================================================
 # DELETE TIME

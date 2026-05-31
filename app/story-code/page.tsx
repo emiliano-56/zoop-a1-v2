@@ -414,8 +414,6 @@ Aspect Ratio: ${aspectRatio}
             >
               <option>16:9</option>
               <option>9:16</option>
-              <option>1:1</option>
-              <option>4:3</option>
             </select>
 
           </div>
